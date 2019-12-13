@@ -1,0 +1,531 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: omsagent
+  namespace: kube-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: omsagent-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "events", "nodes", "namespaces", "services"]
+    verbs: ["list", "get", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["list"]
+  - apiGroups: ["azmon.container.insights"]
+    resources: ["healthstates"]
+    verbs: ["get", "create", "patch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: omsagentclusterrolebinding
+subjects:
+  - kind: ServiceAccount
+    name: omsagent
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: omsagent-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: ConfigMap
+apiVersion: v1
+data:
+  kube.conf: |-
+    # Fluentd config file for OMS Docker - cluster components (kubeAPI)
+     #fluent forward plugin
+     <source>
+      type forward
+      port "#{ENV['HEALTHMODEL_REPLICASET_SERVICE_SERVICE_PORT']}"
+      bind 0.0.0.0
+      chunk_size_limit 4m
+     </source>
+
+     #Kubernetes pod inventory
+     <source>
+      type kubepodinventory
+      tag oms.containerinsights.KubePodInventory
+      run_interval 60
+      log_level debug
+     </source>
+
+     #Kubernetes events
+     <source>
+      type kubeevents
+      tag oms.containerinsights.KubeEvents
+      run_interval 60
+      log_level debug
+      </source>
+
+     #Kubernetes Nodes
+     <source>
+      type kubenodeinventory
+      tag oms.containerinsights.KubeNodeInventory
+      run_interval 60
+      log_level debug
+     </source>
+
+     #Kubernetes health
+     <source>
+      type kubehealth
+      tag kubehealth.ReplicaSet
+      run_interval 60
+      log_level debug
+     </source>
+
+     #cadvisor perf- Windows nodes
+     <source>
+      type wincadvisorperf
+      tag oms.api.wincadvisorperf
+      run_interval 60
+      log_level debug
+     </source>
+
+     <filter mdm.kubepodinventory** mdm.kubenodeinventory**>
+      type filter_inventory2mdm
+      custom_metrics_azure_regions eastus,southcentralus,westcentralus,westus2,southeastasia,northeurope,westeurope,southafricanorth,centralus,northcentralus,eastus2,koreacentral,eastasia,centralindia,uksouth,canadacentral,francecentral,japaneast,australiaeast
+      log_level info
+     </filter>
+
+     #custom_metrics_mdm filter plugin for perf data from windows nodes
+     <filter mdm.cadvisorperf**>
+      type filter_cadvisor2mdm
+      custom_metrics_azure_regions eastus,southcentralus,westcentralus,westus2,southeastasia,northeurope,westeurope,southafricanorth,centralus,northcentralus,eastus2,koreacentral,eastasia,centralindia,uksouth,canadacentral,francecentral,japaneast,australiaeast
+      metrics_to_collect cpuUsageNanoCores,memoryWorkingSetBytes
+      log_level info
+     </filter>
+
+     #health model aggregation filter
+     <filter kubehealth**>
+      type filter_health_model_builder
+     </filter>
+
+     <match oms.containerinsights.KubePodInventory**>
+      type out_oms
+      log_level debug
+      num_threads 5
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_oms_kubepods*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+     </match>
+
+     <match oms.containerinsights.KubeEvents**>
+      type out_oms
+      log_level debug
+      num_threads 5
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_oms_kubeevents*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+     </match>
+
+     <match oms.containerinsights.KubeServices**>
+      type out_oms
+      log_level debug
+      num_threads 2
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_oms_kubeservices*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+     </match>
+
+     <match oms.containerinsights.KubeNodeInventory**>
+      type out_oms
+      log_level debug
+      num_threads 5
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/state/out_oms_kubenodes*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+     </match>
+
+     <match oms.containerinsights.ContainerNodeInventory**>
+      type out_oms
+      log_level debug
+      num_threads 3
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_oms_containernodeinventory*.buffer
+      buffer_queue_limit 20
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+     </match>
+
+     <match oms.api.KubePerf**>
+      type out_oms
+      log_level debug
+      num_threads 5
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_oms_kubeperf*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+     </match>
+
+     <match mdm.kubepodinventory** mdm.kubenodeinventory** >
+      type out_mdm
+      log_level debug
+      num_threads 5
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_mdm_*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+      retry_mdm_post_wait_minutes 60
+     </match>
+
+     <match oms.api.wincadvisorperf**>
+      type out_oms
+      log_level debug
+      num_threads 5
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_oms_api_wincadvisorperf*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+     </match>
+
+     <match mdm.cadvisorperf**>
+      type out_mdm
+      log_level debug
+      num_threads 5
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_mdm_cdvisorperf*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+      retry_mdm_post_wait_minutes 60
+     </match>
+
+     <match kubehealth.Signals**>
+      type out_oms
+      log_level debug
+      num_threads 5
+      buffer_chunk_limit 4m
+      buffer_type file
+      buffer_path %STATE_DIR_WS%/out_oms_kubehealth*.buffer
+      buffer_queue_limit 20
+      buffer_queue_full_action drop_oldest_chunk
+      flush_interval 20s
+      retry_limit 10
+      retry_wait 5s
+      max_retry_wait 5m
+     </match>
+metadata:
+  name: omsagent-rs-config
+  namespace: kube-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: omsagent-secret
+  namespace: kube-system
+type: Opaque
+data:
+  #BASE64 ENCODED (Both WSID & KEY) INSIDE DOUBLE QUOTE ("")
+  WSID: "ZTM1MWI4ODMtOTIzZS00NTMxLWI4NjItMDc3ODRlMjE5Yjgy"
+  KEY: "ZVAzeWhEYStIR3phV3lONDFybm1GS2xvK2V0ZDNJc0RuSlJyOHFiQzFEd2RMazZlOHN0UlZ0K1NxcEU5RXJXTnBpQXZZalJjMmVNRFQwMHdSRjNXTFE9PQ=="
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: omsagent
+  namespace: kube-system
+spec:
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      dsName: "omsagent-ds"
+  template:
+    metadata:
+      labels:
+        dsName: "omsagent-ds"
+      annotations:
+        agentVersion: "1.10.0.1"
+        dockerProviderVersion: "8.0.0-1"
+        schema-versions: "v1"
+    spec:
+      serviceAccountName: omsagent
+      containers:
+        - name: omsagent
+          image: "mcr.microsoft.com/azuremonitor/containerinsights/ciprod:ciprod12042019"
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 150m
+              memory: 600Mi
+            requests:
+              cpu: 75m
+              memory: 225Mi
+          env:
+            - name: AKS_RESOURCE_ID
+              value: "/subscriptions/3da06598-90c6-4e49-b6a1-81913deb3f34/resourceGroups/gangams-arc-k8s-rg/providers/Microsoft.Kubernetes/connectedClusters/gangams-arc-k8s"
+            #- name: AKS_REGION
+            #  value: "VALUE_AKS_RESOURCE_REGION_VALUE"
+            #Uncomment below two lines for ACS clusters and set the cluster names manually. Also comment out the above two lines for ACS clusters
+            #- name: ACS_RESOURCE_NAME
+            #  value: "my_acs_cluster_name"
+            - name: CONTROLLER_TYPE
+              value: "DaemonSet"
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 25225
+              protocol: TCP
+            - containerPort: 25224
+              protocol: UDP
+          volumeMounts:
+            - mountPath: /hostfs
+              name: host-root
+              readOnly: true
+            - mountPath: /var/run/host
+              name: docker-sock
+            - mountPath: /var/log
+              name: host-log
+            - mountPath: /var/lib/docker/containers
+              name: containerlog-path
+            - mountPath: /etc/kubernetes/host
+              name: azure-json-path
+            - mountPath: /etc/omsagent-secret
+              name: omsagent-secret
+            - mountPath: /etc/config/settings
+              name: settings-vol-config
+              readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - /opt/livenessprobe.sh
+            initialDelaySeconds: 60
+            periodSeconds: 60
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+      # Tolerate a NoSchedule taint on master that ACS Engine sets.
+      tolerations:
+        - operator: "Exists"
+          effect: "NoSchedule"
+        - operator: "Exists"
+          effect: "NoExecute"
+        - operator: "Exists"
+          effect: "PreferNoSchedule"
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+        - name: docker-sock
+          hostPath:
+            path: /var/run
+        - name: container-hostname
+          hostPath:
+            path: /etc/hostname
+        - name: host-log
+          hostPath:
+            path: /var/log
+        - name: containerlog-path
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: azure-json-path
+          hostPath:
+            path: /etc/kubernetes
+        - name: omsagent-secret
+          secret:
+            secretName: omsagent-secret
+        - name: settings-vol-config
+          configMap:
+            name: container-azm-ms-agentconfig
+            optional: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: omsagent-rs
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      rsName: "omsagent-rs"
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        rsName: "omsagent-rs"
+      annotations:
+        agentVersion: "1.10.0.1"
+        dockerProviderVersion: "8.0.0-1"
+        schema-versions: "v1"
+    spec:
+      serviceAccountName: omsagent
+      containers:
+        - name: omsagent
+          image: "mcr.microsoft.com/azuremonitor/containerinsights/ciprod:ciprod12042019"
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 1
+              memory: 750Mi
+            requests:
+              cpu: 150m
+              memory: 250Mi
+          env:
+            - name: AKS_RESOURCE_ID
+              value: "/subscriptions/3da06598-90c6-4e49-b6a1-81913deb3f34/resourceGroups/gangams-arc-k8s-rg/providers/Microsoft.Kubernetes/connectedClusters/gangams-arc-k8s"
+            #- name: AKS_REGION
+            #  value: "VALUE_AKS_RESOURCE_REGION_VALUE"
+            # Uncomment below two lines for ACS clusters and set the cluster names manually. Also comment out the above two lines for ACS clusters
+            #- name: ACS_RESOURCE_NAME
+            #  value: "my_acs_cluster_name"
+            - name: CONTROLLER_TYPE
+              value: "ReplicaSet"
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 25225
+              protocol: TCP
+            - containerPort: 25224
+              protocol: UDP
+            - containerPort: 25227
+              protocol: TCP
+              name: in-rs-tcp
+          volumeMounts:
+            - mountPath: /var/run/host
+              name: docker-sock
+            - mountPath: /var/log
+              name: host-log
+            - mountPath: /var/lib/docker/containers
+              name: containerlog-path
+            - mountPath: /etc/kubernetes/host
+              name: azure-json-path
+            - mountPath: /etc/omsagent-secret
+              name: omsagent-secret
+              readOnly: true
+            - mountPath: /etc/config
+              name: omsagent-rs-config
+            - mountPath: /etc/config/settings
+              name: settings-vol-config
+              readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - /opt/livenessprobe.sh
+            initialDelaySeconds: 60
+            periodSeconds: 60
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+      tolerations:
+        - operator: "Exists"
+          effect: "NoSchedule"
+        - operator: "Exists"
+          effect: "NoExecute"
+        - operator: "Exists"
+          effect: "PreferNoSchedule"
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run
+        - name: container-hostname
+          hostPath:
+            path: /etc/hostname
+        - name: host-log
+          hostPath:
+            path: /var/log
+        - name: containerlog-path
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: azure-json-path
+          hostPath:
+            path: /etc/kubernetes
+        - name: omsagent-secret
+          secret:
+            secretName: omsagent-secret
+        - name: omsagent-rs-config
+          configMap:
+            name: omsagent-rs-config
+        - name: settings-vol-config
+          configMap:
+            name: container-azm-ms-agentconfig
+            optional: true
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: healthmodel-replicaset-service
+  namespace: kube-system
+spec:
+  selector:
+    rsName: "omsagent-rs"
+  ports:
+    - protocol: TCP
+      port: 25227
+      targetPort: in-rs-tcp
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: healthstates.azmon.container.insights
+  namespace: kube-system
+spec:
+  group: azmon.container.insights
+  version: v1
+  scope: Namespaced
+  names:
+    plural: healthstates
+    kind: HealthState
