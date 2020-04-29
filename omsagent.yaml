@@ -268,8 +268,8 @@ metadata:
 type: Opaque
 data:
   #BASE64 ENCODED (Both WSID & KEY) INSIDE DOUBLE QUOTE ("")
-  WSID: "ZTM1MWI4ODMtOTIzZS00NTMxLWI4NjItMDc3ODRlMjE5Yjgy"
-  KEY: "ZVAzeWhEYStIR3phV3lONDFybm1GS2xvK2V0ZDNJc0RuSlJyOHFiQzFEd2RMazZlOHN0UlZ0K1NxcEU5RXJXTnBpQXZZalJjMmVNRFQwMHdSRjNXTFE9PQ=="
+  WSID: "NjU2MzY1NTktMWRkNC00NjRmLTlhNWYtMmZkMGQ0NWI0NzVk"
+  KEY: "MElFVmZ0MlUwVVZ0c1BURzIrQmdTeHQwd3RpUTNNaGxNZjA1TTBrU1o1Z054amxNMkRZaGhsTXg2M2dLODFUYXBWQjFBMFJOK21Xa1ZFMjBVbFZvMVE9PQ=="
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -305,9 +305,9 @@ spec:
               memory: 225Mi
           env:
             - name: AKS_RESOURCE_ID
-              value: "/subscriptions/3da06598-90c6-4e49-b6a1-81913deb3f34/resourceGroups/gangams-arc-k8s-rg/providers/Microsoft.Kubernetes/connectedClusters/gangams-arc-k8s"
-            #- name: AKS_REGION
-            #  value: "VALUE_AKS_RESOURCE_REGION_VALUE"
+              value: "/subscriptions/09af8f6f-d4e5-4b9d-950b-b7aa2e897477/resourcegroups/aks-ci-test-cluster-rg/providers/Microsoft.ContainerService/managedClusters/aks-ci-test"
+            - name: AKS_REGION
+              value: "East US"
             #Uncomment below two lines for ACS clusters and set the cluster names manually. Also comment out the above two lines for ACS clusters
             #- name: ACS_RESOURCE_NAME
             #  value: "my_acs_cluster_name"
@@ -421,9 +421,9 @@ spec:
               memory: 250Mi
           env:
             - name: AKS_RESOURCE_ID
-              value: "/subscriptions/3da06598-90c6-4e49-b6a1-81913deb3f34/resourceGroups/gangams-arc-k8s-rg/providers/Microsoft.Kubernetes/connectedClusters/gangams-arc-k8s"
-            #- name: AKS_REGION
-            #  value: "VALUE_AKS_RESOURCE_REGION_VALUE"
+              value: "/subscriptions/09af8f6f-d4e5-4b9d-950b-b7aa2e897477/resourcegroups/aks-ci-test-cluster-rg/providers/Microsoft.ContainerService/managedClusters/aks-ci-test"
+            - name: AKS_REGION
+              value: "East US"
             # Uncomment below two lines for ACS clusters and set the cluster names manually. Also comment out the above two lines for ACS clusters
             #- name: ACS_RESOURCE_NAME
             #  value: "my_acs_cluster_name"
